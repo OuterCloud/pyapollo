@@ -99,7 +99,6 @@ class ApolloClient(object):
         self._cache_file_path = None
         self.ip = self._get_local_ip_address(ip)
         self._update_config_server_url()
-        self._init_config_server_host_port()
         self._init_cache_file_path(cache_file_path)
         self._fetch_configuration()
         self._start_polling_thread()
@@ -255,9 +254,9 @@ class ApolloClient(object):
             return result
         return {}
 
-    def _get_config_by_namespace(self, namespace: str = "application") -> None:
+    def _fetch_config_by_namespace(self, namespace: str = "application") -> None:
         """
-        Get configuration of the namespace from apollo server
+        Fetch configuration of the namespace from apollo server
         """
 
         url = f"{self._config_server_host}:{self._config_server_port}/configs/{self._app_id}/{self._cluster}/{namespace}"
@@ -282,7 +281,7 @@ class ApolloClient(object):
                 self._cache[namespace] = data
 
         except Exception as e:
-            logger.error(f"Get apollo configuration meet error, error: {e}")
+            logger.error(f"Fetch apollo configuration meet error, error: {e}")
             data = self._get_local_cache(namespace)
             self._cache[namespace] = data
 
@@ -294,6 +293,7 @@ class ApolloClient(object):
         """
 
         self._config_server_url = self.get_config_server_url()
+        self._init_config_server_host_port()
 
     def _fetch_configuration(self) -> None:
         """
@@ -302,7 +302,7 @@ class ApolloClient(object):
 
         try:
             for namespace in self._notification_map.keys():
-                self._get_config_by_namespace(namespace)
+                self._fetch_config_by_namespace(namespace)
         except requests.exceptions.ReadTimeout as e:
             logger.warning(str(e))
         except requests.exceptions.ConnectionError as e:
