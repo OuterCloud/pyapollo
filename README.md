@@ -6,9 +6,10 @@ Apollo python client using the official apollo http API.
 
 主要功能：
 
-- 支持 Apollo 配置项获取与实时更新。
-- 支持有密钥/无密钥的 Apollo 应用配置获取。
-- 支持基于分布式部署的 Apollo 应用配置获取。
+- 支持实时更新：支持 Apollo 配置项获取与实时更新。
+- 支持密钥：支持有密钥/无密钥的 Apollo 应用配置获取。
+- 支持分布式部署：支持基于分布式部署的 Apollo 应用配置获取。
+- 有容灾机制：当一个 Apollo 服务节点不可用时，会自动切换到下一个可用的服务节点。
 
 ## 为什么写这个项目
 
