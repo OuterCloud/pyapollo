@@ -28,7 +28,7 @@ Apollo python client using the official apollo http API.
 - Meta Server 用于封装 Eureka 的服务发现接口。
 - Client 通过域名访问 Meta Server 获取 Config Service 服务列表（IP+Port），而后直接通过 IP+Port 访问服务端获取配置信息。
 
-本项目就是基于这个原理实现的。
+本项目就是基于这个原理实现的。其中用于服务发现的接口[源码定义所在](https://github.com/apolloconfig/apollo/blob/6de040a2b9bc68d32c95045de00e21f55f20122b/apollo-portal/src/main/java/com/ctrip/framework/apollo/portal/controller/SystemInfoController.java#L45)。
 
 ## 安装
 
