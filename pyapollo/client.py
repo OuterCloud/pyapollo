@@ -57,7 +57,7 @@ class ApolloClient(object):
 
     def __init__(
         self,
-        endpoint: str,
+        meta_server_address: str,
         app_id: str,
         app_secret: str = None,
         cluster: str = "default",
@@ -71,9 +71,10 @@ class ApolloClient(object):
         """
         Initialize method
 
+        :param meta_server_address: the meta server address, format is like 'https://xxx/yyy'
         :param app_id: application id
+        :param app_secret: application secret, optional
         :param cluster: cluster name, default value is 'default'
-        :param endpoint: with the format 'http://localhost:80080/a/b/c'
         :param env: environment, default value is 'DEV'
         :param namespaces: the namespace list to get configuration, default value is ['application']
         :param timeout: http request timeout seconds, default value is 60 seconds
@@ -81,36 +82,54 @@ class ApolloClient(object):
         :param cycle_time: the cycle time to update configuration content from server
         :param cache_file_path: local cache file store path
         """
-        self.endpoint = endpoint
-        self.app_id = app_id
-        self.app_secret = app_secret
-        self.cluster = cluster
-        self.timeout = timeout
-        self.stopped = False
+
+        self._meta_server_address = meta_server_address
+        self._app_id = app_id
+        self._app_secret = app_secret
+        self._cluster = cluster
+        self._timeout = timeout
         self._env = env
-        self.ip = self._get_local_ip_address(ip)
-
-        self.config_server_url = self.get_config_server_url()
-        remote = self.config_server_url.split(":")
-        self.host = f"{remote[0]}:{remote[1]}"
-        if len(remote) == 1:
-            self.port = 8090
-        else:
-            self.port = int(remote[2].rstrip("/"))
-
         self._cache: Dict = {}
         self._notification_map = {namespace: -1 for namespace in namespaces}
         self._cycle_time = cycle_time
         self._hash: Dict = {}
+        self._config_server_url = None
+        self._config_server_host = None
+        self._config_server_port = None
+        self._cache_file_path = None
+        self.ip = self._get_local_ip_address(ip)
+        self._update_config_server_url()
+        self._init_config_server_host_port()
+        self._init_cache_file_path(cache_file_path)
+        self._fetch_configuration()
+        self._start_polling_thread()
+
+    def _init_config_server_host_port(self):
+        """
+        Initialize the config server host and port
+        """
+
+        remote = self._config_server_url.split(":")
+        self._config_server_host = f"{remote[0]}:{remote[1]}"
+        if len(remote) == 1:
+            self._config_server_port = 8090
+        else:
+            self._config_server_port = int(remote[2].rstrip("/"))
+
+    def _init_cache_file_path(self, cache_file_path):
+        """
+        Initialize the cache file path
+        """
+
         if cache_file_path is None:
             self._cache_file_path = os.path.join(
                 os.path.abspath(os.path.dirname(__file__)), "config"
             )
         else:
             self._cache_file_path = cache_file_path
-        self._cache_file_path_checker()
-        self._get_configuration()
-        self._start()
+
+        if not os.path.isdir(self._cache_file_path):
+            os.mkdir(self._cache_file_path)
 
     @staticmethod
     def _sign_string(string_to_sign: str, secret: str) -> str:
@@ -141,18 +160,6 @@ class ApolloClient(object):
             HTTP_HEADER_TIMESTAMP: timestamp,
         }
 
-    def get_config_server_url(self) -> str:
-        """
-        Get the config server url
-        """
-
-        service_conf_url = f"{self.endpoint}/services/config"
-        service_conf: list = requests.get(service_conf_url).json()
-        if not service_conf:
-            raise ValueError("no apollo service found")
-        service = service_conf[0]
-        return service["homepageUrl"]
-
     @staticmethod
     def _get_local_ip_address(ip: Optional[str]) -> str:
         """
@@ -169,7 +176,7 @@ class ApolloClient(object):
                 return "127.0.0.1"
         return ip
 
-    def _start(self) -> None:
+    def _start_polling_thread(self) -> None:
         """
         Start the long polling loop thread
         """
@@ -187,37 +194,32 @@ class ApolloClient(object):
         """
 
         try:
-            if self.app_secret:
+            if self._app_secret:
                 return requests.get(
                     url=url,
                     params=params,
-                    timeout=self.timeout // 2,
-                    headers=self._build_http_headers(url, self.app_id, self.app_secret),
+                    timeout=self._timeout // 2,
+                    headers=self._build_http_headers(
+                        url, self._app_id, self._app_secret
+                    ),
                 )
             else:
-                return requests.get(url=url, params=params, timeout=self.timeout // 2)
+                return requests.get(url=url, params=params, timeout=self._timeout // 2)
 
         except requests.exceptions.ReadTimeout:
             # if read timeout, check the server is alive or not
             try:
                 with socket.create_connection(
-                    (self.host, self.port), timeout=self.timeout / 2
+                    (self._config_server_host, self._config_server_port),
+                    timeout=self._timeout / 2,
                 ):
                     # if connect server succeed, raise the exception that namespace not found
                     raise NameSpaceNotFoundException("namespace not found")
             except (ConnectionRefusedError, socket.timeout, OSError):
                 # if connection refused, raise server not response error
                 raise ServerNotResponseException(
-                    "server: %s not response" % self.config_server_url
+                    "server: %s not response" % self._config_server_url
                 )
-
-    def _cache_file_path_checker(self) -> None:
-        """
-        Greate configuration cache file directory if not exits
-        """
-
-        if not os.path.isdir(self._cache_file_path):
-            os.mkdir(self._cache_file_path)
 
     def _update_local_cache(
         self, release_key: str, data: str, namespace: str = "application"
@@ -232,7 +234,7 @@ class ApolloClient(object):
             with open(
                 os.path.join(
                     self._cache_file_path,
-                    "%s_configuration_%s.txt" % (self.app_id, namespace),
+                    "%s_configuration_%s.txt" % (self._app_id, namespace),
                 ),
                 "w",
             ) as f:
@@ -245,7 +247,7 @@ class ApolloClient(object):
         Get configuration from local cache file
         """
         cache_file_path = os.path.join(
-            self._cache_file_path, "%s_configuration_%s.txt" % (self.app_id, namespace)
+            self._cache_file_path, "%s_configuration_%s.txt" % (self._app_id, namespace)
         )
         if os.path.isfile(cache_file_path):
             with open(cache_file_path, "r") as f:
@@ -258,9 +260,7 @@ class ApolloClient(object):
         Get configuration of the namespace from apollo server
         """
 
-        url = (
-            f"{self.host}:{self.port}/configs/{self.app_id}/{self.cluster}/{namespace}"
-        )
+        url = f"{self._config_server_host}:{self._config_server_port}/configs/{self._app_id}/{self._cluster}/{namespace}"
         try:
             r = self._http_get(url)
             if r.status_code == 200:
@@ -280,12 +280,22 @@ class ApolloClient(object):
                 )
                 data = self._get_local_cache(namespace)
                 self._cache[namespace] = data
+
         except Exception as e:
-            logger.error(f"Get apollo configuration failed, error: {e}")
+            logger.error(f"Get apollo configuration meet error, error: {e}")
             data = self._get_local_cache(namespace)
             self._cache[namespace] = data
 
-    def _get_configuration(self) -> None:
+            self._update_config_server_url()
+
+    def _update_config_server_url(self):
+        """
+        Update the config server url
+        """
+
+        self._config_server_url = self.get_config_server_url()
+
+    def _fetch_configuration(self) -> None:
         """
         Get configurations for all namespaces from apollo server
         """
@@ -321,8 +331,20 @@ class ApolloClient(object):
         """
 
         while True:
-            self._get_configuration()
+            self._fetch_configuration()
             time.sleep(self._cycle_time)
+
+    def get_config_server_url(self) -> str:
+        """
+        Get the config server url
+        """
+
+        service_conf_url = f"{self._meta_server_address}/services/config"
+        service_conf: list = requests.get(service_conf_url).json()
+        if not service_conf:
+            raise ValueError("no apollo service found")
+        service = service_conf[0]
+        return service["homepageUrl"]
 
     def get_value(
         self, key: str, default_val: str = None, namespace: str = "application"

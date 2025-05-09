@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="pyapollo",  # 包名
-    version="0.1.0",  # 版本
+    version="0.1.1",  # 版本
     author="lantianyou",
     author_email="434209210@qq.com",
     description="Apollo client tested on python 3.13",
