@@ -98,12 +98,12 @@ class ApolloClient(object):
         self._config_server_port = None
         self._cache_file_path = None
         self.ip = self._get_local_ip_address(ip)
-        self._update_config_server_url()
+        self._update_config_server()
         self._init_cache_file_path(cache_file_path)
         self._fetch_configuration()
         self._start_polling_thread()
 
-    def _init_config_server_host_port(self):
+    def _update_config_server_host_port(self):
         """
         Initialize the config server host and port
         """
@@ -281,21 +281,12 @@ class ApolloClient(object):
                 self._cache[namespace] = data
 
         except Exception as e:
-            logger.error(
-                f"Fetch apollo configuration meet error, error: {e}, config server url: {self._config_server_url}, host: {self._config_server_host}, port: {self._config_server_port}"
-            )
             data = self._get_local_cache(namespace)
             self._cache[namespace] = data
-
-            self._update_config_server_url()
-
-    def _update_config_server_url(self):
-        """
-        Update the config server url
-        """
-
-        self._config_server_url = self.get_config_server_url()
-        self._init_config_server_host_port()
+            logger.error(
+                f"Fetch apollo configuration meet error, error: {e}, url: {url}, config server url: {self._config_server_url}, host: {self._config_server_host}, port: {self._config_server_port}"
+            )
+            self._update_config_server(exclude=self._config_server_host)
 
     def _fetch_configuration(self) -> None:
         """
@@ -336,17 +327,41 @@ class ApolloClient(object):
             self._fetch_configuration()
             time.sleep(self._cycle_time)
 
-    def get_config_server_url(self) -> str:
+    def get_service_conf(self) -> List:
         """
-        Get the config server url
-        """
+        Get the config servers
 
+        """
         service_conf_url = f"{self._meta_server_address}/services/config"
         service_conf: list = requests.get(service_conf_url).json()
         if not service_conf:
-            raise ValueError("no apollo service found")
+            raise ValueError("No apollo service found")
+        return service_conf
+
+    def _update_config_server(self, exclude: str = None) -> str:
+        """
+        Update the config server info
+        """
+
+        service_conf = self.get_service_conf()
+        logger.debug(f"Apollo service conf: {service_conf}")
+        if exclude:
+            service_conf = [
+                service for service in service_conf if service["homepageUrl"] != exclude
+            ]
         service = service_conf[0]
-        return service["homepageUrl"]
+        self._config_server_url = service["homepageUrl"]
+
+        remote = self._config_server_url.split(":")
+        self._config_server_host = f"{remote[0]}:{remote[1]}"
+        if len(remote) == 1:
+            self._config_server_port = 8090
+        else:
+            self._config_server_port = int(remote[2].rstrip("/"))
+
+        logger.info(
+            f"Update config server url to: {self._config_server_url}, host: {self._config_server_host}, port: {self._config_server_port}"
+        )
 
     def get_value(
         self, key: str, default_val: str = None, namespace: str = "application"
