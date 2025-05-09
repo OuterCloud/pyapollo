@@ -10,7 +10,10 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/OuterCloud/pyapollo",
     packages=find_packages(),  # 自动查找模块
-    install_requires=[],  # 依赖包列表
+    install_requires=[
+        "requests",
+        "loguru",
+    ],  # 依赖包列表
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
