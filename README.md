@@ -30,14 +30,14 @@ Apollo python client using the official apollo http API.
 ## 安装
 
 ```bash
-pip install git+https://github.com/OuterCloud/pyapollo.git
+pip install git+https://github.com/OuterCloud/pyapollo.git@main
 
 ```
 
 写到 requirements.txt 里也是一样：
 
 ```
-git+https://github.com/OuterCloud/pyapollo.git@v0.1.0
+git+https://github.com/OuterCloud/pyapollo.git@main
 ```
 
 ## 使用方法
