@@ -281,7 +281,9 @@ class ApolloClient(object):
                 self._cache[namespace] = data
 
         except Exception as e:
-            logger.error(f"Fetch apollo configuration meet error, error: {e}")
+            logger.error(
+                f"Fetch apollo configuration meet error, error: {e}, config server url: {self._config_server_url}, host: {self._config_server_host}, port: {self._config_server_port}"
+            )
             data = self._get_local_cache(namespace)
             self._cache[namespace] = data
 
