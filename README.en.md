@@ -15,6 +15,7 @@ Tested with Python 3.13 and the latest version of Apollo.
 - Secret support: Works with both secret-protected and non-secret Apollo applications.
 - Distributed deployment: Supports configuration fetching from distributed Apollo deployments.
 - Failover mechanism: Automatically switches to available service nodes when one becomes unavailable.
+- Async support: Provides asynchronous support for fetching configuration items.
 
 ## Why This Project
 
@@ -51,11 +52,13 @@ git+https://github.com/OuterCloud/pyapollo.git@main
 
 ## Usage
 
-Parameters:
+The parameters in the following code snippets are explained as follows:
 
-- `meta_server_address`: Apollo server address
-- `app_id`: Apollo application ID
-- `app_secret`: Apollo application secret (optional for non-secret protected apps)
+- meta_server_address: Apollo server address.
+- app_id: Apollo application ID.
+- app_secret: Apollo application secret key.
+
+### Synchronous Apollo Client
 
 ```python
 from pyapollo.client import ApolloClient
@@ -64,23 +67,70 @@ meta_server_address = "https://your-apollo/meta-server-address"
 app_id="your-apollo-app-id"
 app_secret="your-apollo-app-secret"
 
-# Apollo client with authentication
+# Apollo sync client with app secret
 apollo = ApolloClient(
     meta_server_address=meta_server_address,
     app_id=app_id,
     app_secret=app_secret,
 )
 
-# Apollo client without authentication
+# Apollo sync client without app secret
 apollo = ApolloClient(
     meta_server_address=meta_server_address,
     app_id=app_id,
 )
 
-# Get configuration values
-val = apollo.get_value("key1")
+# Get text format configuration item
+val = apollo.get_value("text_key")
 print(val)
 
-json_val = apollo.get_json_value("key2")
+# Get JSON format configuration item
+json_val = apollo.get_json_value("json_key")
 print(json_val)
+```
+
+### Asynchronous Apollo Client
+
+```python
+import argparse
+import asyncio
+
+from pyapollo.async_client import AsyncApolloClient
+
+
+async def main():
+    meta_server_address = "https://your-apollo/meta-server-address"
+    app_id="your-apollo-app-id"
+    app_secret="your-apollo-app-secret"
+
+    # Apollo async client with app secret
+    async with AsyncApolloClient(
+        meta_server_address=meta_server_address,
+        app_id=app_id,
+        app_secret=app_secret,
+    ) as client:
+        # Get text format configuration item
+        val = await client.get_json_value("json_key")
+        print(val)
+
+        # Get JSON format configuration item
+        json_val = await client.get_value("text_key")
+        print(json_val)
+
+    # Apollo async client without app secret
+    async with AsyncApolloClient(
+        meta_server_address=meta_server_address,
+        app_id=app_id,
+    ) as client:
+        # Get text format configuration item
+        val = await client.get_json_value("json_key")
+        print(val)
+
+        # Get JSON format configuration item
+        json_val = await client.get_value("text_key")
+        print(json_val)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```

@@ -174,4 +174,4 @@ cython_debug/
 .pypirc
 
 # pyapollo
-.pyapollo/config
+pyapollo/config

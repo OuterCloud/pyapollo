@@ -14,6 +14,8 @@ setup(
         "setuptools",
         "requests",
         "loguru",
+        "aiohttp",
+        "aiofiles",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

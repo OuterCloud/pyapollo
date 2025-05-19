@@ -13,6 +13,7 @@
 - 支持密钥：支持有密钥/无密钥的 Apollo 应用配置获取。
 - 支持分布式部署：支持基于分布式部署的 Apollo 应用配置获取。
 - 有容灾机制：当一个 Apollo 服务节点不可用时，会自动切换到下一个可用的服务节点。
+- 支持异步：提供异步类型的客户端，支持异步获取配置项。
 
 ## 为什么写这个项目
 
@@ -49,7 +50,13 @@ git+https://github.com/OuterCloud/pyapollo.git@main
 
 ## 使用方法
 
-下文中的 meta_server_address 是 Apollo 服务端的地址，app_id 是 Apollo 应用的 ID，app_secret 是 Apollo 应用的密钥。如果你的 Apollo 应用没有密钥，那么可以不填 app_secret。
+下文中的参数说明：
+
+- meta_server_address: Apollo 服务端的地址。
+- app_id: Apollo 应用的 ID。
+- app_secret: Apollo 应用的密钥。
+
+### 同步 Apollo 客户端
 
 ```python
 from pyapollo.client import ApolloClient
@@ -58,23 +65,70 @@ meta_server_address = "https://your-apollo/meta-server-address"
 app_id="your-apollo-app-id"
 app_secret="your-apollo-app-secret"
 
-# 有鉴权的 Apollo 客户端
+# 有鉴权的 Apollo 同步客户端
 apollo = ApolloClient(
     meta_server_address=meta_server_address,
     app_id=app_id,
     app_secret=app_secret,
 )
 
-# 无鉴权的 Apollo 客户端
+# 无鉴权的 Apollo 同步客户端
 apollo = ApolloClient(
     meta_server_address=meta_server_address,
     app_id=app_id,
 )
 
-# 获取配置项
-val = apollo.get_value("key1")
+# 获取 text 格式配置项
+val = apollo.get_value("text_key")
 print(val)
 
-json_val = apollo.get_json_value("key2")
+# 获取 JSON 格式配置项
+json_val = apollo.get_json_value("json_key")
 print(json_val)
+```
+
+### 异步 Apollo 客户端
+
+```python
+import argparse
+import asyncio
+
+from pyapollo.async_client import AsyncApolloClient
+
+
+async def main():
+    meta_server_address = "https://your-apollo/meta-server-address"
+    app_id="your-apollo-app-id"
+    app_secret="your-apollo-app-secret"
+
+    # 有鉴权的 Apollo 异步客户端
+    async with AsyncApolloClient(
+        meta_server_address=meta_server_address,
+        app_id=app_id,
+        app_secret=app_secret,
+    ) as client:
+        # 获取 text 格式配置项
+        val = await client.get_json_value("json_key")
+        print(val)
+
+        # 获取 JSON 格式配置项
+        json_val = await client.get_value("text_key")
+        print(json_val)
+
+    # 无鉴权的 Apollo 异步客户端
+    async with AsyncApolloClient(
+        meta_server_address=meta_server_address,
+        app_id=app_id,
+    ) as client:
+        # 获取 text 格式配置项
+        val = await client.get_json_value("json_key")
+        print(val)
+
+        # 获取 JSON 格式配置项
+        json_val = await client.get_value("text_key")
+        print(json_val)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
