@@ -10,6 +10,7 @@ Key features:
 - Thread-safe with asyncio locks
 - Supports async context manager
 - Implements Apollo's official HTTP API
+- Supports configuration via environment variables and .env files
 
 Implements Apollo's official HTTP API:
 English: https://www.apolloconfig.com/#/en/client/other-language-client-user-guide
@@ -34,6 +35,7 @@ from loguru import logger
 
 from pyapollo.exceptions import ServerNotResponseException
 from pyapollo.async_interface import AsyncConfigClientInterface
+from pyapollo.settings import ApolloSettingsConfig
 
 
 class AsyncApolloClient(AsyncConfigClientInterface):
@@ -55,55 +57,110 @@ class AsyncApolloClient(AsyncConfigClientInterface):
 
     def __init__(
         self,
-        meta_server_address: str,
-        app_id: str,
-        app_secret: str = None,
+        meta_server_address: Optional[str] = None,
+        app_id: Optional[str] = None,
+        app_secret: Optional[str] = None,
         cluster: str = "default",
         env: str = "DEV",
-        namespaces: List[str] = None,
-        ip: str = None,
+        namespaces: Optional[List[str]] = None,
+        ip: Optional[str] = None,
         timeout: int = 10,
         cycle_time: int = 30,
-        cache_file_dir_path: str = None,
-        session: aiohttp.ClientSession = None,
+        cache_file_dir_path: Optional[str] = None,
+        session: Optional[aiohttp.ClientSession] = None,
+        settings: Optional[ApolloSettingsConfig] = None,
     ):
         """
         Initialize method
 
-        :param meta_server_address: the meta server address, format is like 'https://xxx/yyy'
-        :param app_id: application id
-        :param app_secret: application secret, optional
-        :param cluster: cluster name, default value is 'default'
-        :param env: environment, default value is 'DEV'
-        :param namespaces: the namespace list to get configuration, default value is ['application']
-        :param timeout: http request timeout seconds, default value is 10 seconds
-        :param ip: the deploy ip for grey release, default value is the local ip
-        :param cycle_time: the cycle time to update configuration content from server
-        :param cache_file_dir_path: the directory path to store the configuration cache file
-        :param session: aiohttp client session, if not provided, a new one will be created
+        Args:
+            meta_server_address: Apollo meta server address, format is like 'https://xxx/yyy'
+            app_id: Application ID
+            app_secret: Application secret, optional
+            cluster: Cluster name, default value is 'default'
+            env: Environment, default value is 'DEV'
+            namespaces: Namespace list to get configuration, default value is ['application']
+            timeout: HTTP request timeout seconds, default value is 10 seconds
+            ip: Deploy IP for grey release, default value is the local IP
+            cycle_time: Cycle time to update configuration content from server
+            cache_file_dir_path: Directory path to store the configuration cache file
+            session: aiohttp client session, if not provided, a new one will be created
+            settings: ApolloSettingsConfig instance, if provided other parameters will be ignored
+
+        You can initialize the client in three ways:
+        1. Using environment variables (requires no parameters):
+            ```python
+            client = AsyncApolloClient()  # Will use environment variables with APOLLO_ prefix
+            ```
+
+        2. Using ApolloSettingsConfig:
+            ```python
+            settings = ApolloSettingsConfig(
+                meta_server_address="http://localhost:8080",
+                app_id="my-app"
+            )
+            client = AsyncApolloClient(settings=settings)
+            ```
+
+        3. Using direct parameters:
+            ```python
+            client = AsyncApolloClient(
+                meta_server_address="http://localhost:8080",
+                app_id="my-app"
+            )
+            ```
         """
         # Skip initialization if already initialized (singleton pattern)
         if hasattr(self, "_initialized") and self._initialized:
             return
 
-        if namespaces is None:
-            namespaces = ["application"]
+        # Load configuration from settings or environment if no direct parameters provided
+        if settings is None and meta_server_address is None and app_id is None:
+            settings = ApolloSettingsConfig()  # Will load from environment variables
 
-        self._meta_server_address = meta_server_address
-        self._app_id = app_id
-        self._app_secret = app_secret
-        self._cluster = cluster
-        self._timeout = timeout
-        self._env = env
-        self._cache: Dict = {}
+        # Initialize cache directory path first
+        self._cache_file_dir_path = None
+
+        # If settings is provided, use it
+        if settings is not None:
+            self._meta_server_address = settings.meta_server_address
+            self._app_id = settings.app_id
+            self._app_secret = (
+                settings.app_secret if settings.using_app_secret else None
+            )
+            self._cluster = settings.cluster
+            self._timeout = settings.timeout
+            self._env = settings.env
+            self._cycle_time = settings.cycle_time
+            self._cache_file_dir_path = settings.cache_file_dir_path
+            self.ip = self._get_local_ip_address(settings.ip)
+            namespaces = settings.namespaces
+        else:
+            # Use direct parameters
+            self._meta_server_address = meta_server_address
+            self._app_id = app_id
+            self._app_secret = app_secret
+            self._cluster = cluster
+            self._timeout = timeout
+            self._env = env
+            self._cycle_time = cycle_time
+            self._cache_file_dir_path = cache_file_dir_path
+            self.ip = self._get_local_ip_address(ip)
+            if namespaces is None:
+                namespaces = ["application"]
+
+        # Initialize notification map
         self._notification_map = {namespace: -1 for namespace in namespaces}
-        self._cycle_time = cycle_time
+
+        # Initialize other attributes
+        self._cache: Dict = {}
         self._hash: Dict = {}
         self._config_server_url = None
         self._config_server_host = None
         self._config_server_port = None
-        self._cache_file_dir_path = None
-        self.ip = self._get_local_ip_address(ip)
+
+        # Initialize cache directory path if not set
+        self._init_cache_file_dir_path(self._cache_file_dir_path)
 
         # Asyncio specific attributes
         self._update_cache_lock = asyncio.Lock()
@@ -115,7 +172,7 @@ class AsyncApolloClient(AsyncConfigClientInterface):
         self._initialized = True
 
         # Store instance in class dictionary for singleton pattern
-        key = f"{meta_server_address},{app_id},{cluster},{env},{tuple(namespaces)}"
+        key = f"{self._meta_server_address},{self._app_id},{self._cluster},{self._env},{tuple(namespaces)}"
         AsyncApolloClient._instances[key] = self
 
     async def _ensure_session(self):
@@ -128,7 +185,6 @@ class AsyncApolloClient(AsyncConfigClientInterface):
         """Async context manager entry"""
         await self._ensure_session()
         await self.update_config_server()
-        self._init_cache_file_dir_path()
         await self.fetch_configuration()
         await self.start_polling()
         return self
@@ -152,6 +208,7 @@ class AsyncApolloClient(AsyncConfigClientInterface):
         elif cache_file_dir_path is not None:
             self._cache_file_dir_path = cache_file_dir_path
 
+        # Ensure the cache directory exists
         if not os.path.isdir(self._cache_file_dir_path):
             os.makedirs(self._cache_file_dir_path, exist_ok=True)
 
@@ -238,12 +295,9 @@ class AsyncApolloClient(AsyncConfigClientInterface):
         self._stop_event.clear()
 
         # Get the appropriate event loop based on Python version
-        if sys.version_info >= (3, 7):
-            try:
-                loop = asyncio.get_running_loop()
-            except AttributeError:  # Python 3.7 doesn't have get_running_loop
-                loop = asyncio.get_event_loop()
-        else:
+        try:
+            loop = asyncio.get_running_loop()
+        except AttributeError:  # Python 3.7 doesn't have get_running_loop
             loop = asyncio.get_event_loop()
 
         self._polling_task = loop.create_task(self._listener())

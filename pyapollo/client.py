@@ -11,6 +11,7 @@ Key improvements:
 - Removed deprecated telnetlib usage for Python 3.13+ compatibility
 - Added app secret support
 - Thread-safe improvements
+- Added pydantic-settings support for configuration
 
 Implements Apollo's official HTTP API:
 English: https://www.apolloconfig.com/#/en/client/other-language-client-user-guide
@@ -33,6 +34,7 @@ from loguru import logger
 
 from pyapollo.exceptions import ServerNotResponseException
 from pyapollo.interface import ConfigClientInterface
+from pyapollo.settings import ApolloSettingsConfig
 
 
 class ApolloClient(ConfigClientInterface):
@@ -52,49 +54,105 @@ class ApolloClient(ConfigClientInterface):
 
     def __init__(
         self,
-        meta_server_address: str,
-        app_id: str,
-        app_secret: str = None,
+        meta_server_address: Optional[str] = None,
+        app_id: Optional[str] = None,
+        app_secret: Optional[str] = None,
         cluster: str = "default",
         env: str = "DEV",
         namespaces: List[str] = ["application"],
-        ip: str = None,
+        ip: Optional[str] = None,
         timeout: int = 10,
         cycle_time: int = 30,
-        cache_file_dir_path: str = None,
+        cache_file_dir_path: Optional[str] = None,
+        settings: Optional[ApolloSettingsConfig] = None,
     ):
         """
         Initialize method
 
-        :param meta_server_address: the meta server address, format is like 'https://xxx/yyy'
-        :param app_id: application id
-        :param app_secret: application secret, optional
-        :param cluster: cluster name, default value is 'default'
-        :param env: environment, default value is 'DEV'
-        :param namespaces: the namespace list to get configuration, default value is ['application']
-        :param timeout: http request timeout seconds, default value is 60 seconds
-        :param ip: the deploy ip for grey release, default value is the local ip
-        :param cycle_time: the cycle time to update configuration content from server
-        :param cache_file_dir_path: the directory path to store the configuration cache file
-        """
+        Args:
+            meta_server_address: Apollo meta server address, format is like 'https://xxx/yyy'
+            app_id: Application ID
+            app_secret: Application secret, optional
+            cluster: Cluster name, default value is 'default'
+            env: Environment, default value is 'DEV'
+            namespaces: Namespace list to get configuration, default value is ['application']
+            timeout: HTTP request timeout seconds, default value is 60 seconds
+            ip: Deploy IP for grey release, default value is the local IP
+            cycle_time: Cycle time to update configuration content from server
+            cache_file_dir_path: Directory path to store the configuration cache file
+            settings: ApolloSettingsConfig instance, if provided other parameters will be ignored
 
-        self._meta_server_address = meta_server_address
-        self._app_id = app_id
-        self._app_secret = app_secret
-        self._cluster = cluster
-        self._timeout = timeout
-        self._env = env
+        You can initialize the client in three ways:
+        1. Using environment variables (requires no parameters):
+            ```python
+            client = ApolloClient()  # Will use environment variables with APOLLO_ prefix
+            ```
+
+        2. Using ApolloSettingsConfig:
+            ```python
+            settings = ApolloSettingsConfig(
+                meta_server_address="http://localhost:8080",
+                app_id="my-app"
+            )
+            client = ApolloClient(settings=settings)
+            ```
+
+        3. Using direct parameters:
+            ```python
+            client = ApolloClient(
+                meta_server_address="http://localhost:8080",
+                app_id="my-app"
+            )
+            ```
+        """
+        # Load configuration from settings or environment if no direct parameters provided
+        if settings is None and meta_server_address is None and app_id is None:
+            settings = ApolloSettingsConfig()  # Will load from environment variables
+
+        # Initialize cache directory path first
+        self._cache_file_dir_path = None
+
+        # If settings is provided, use it
+        if settings is not None:
+            self._meta_server_address = settings.meta_server_address
+            self._app_id = settings.app_id
+            self._app_secret = (
+                settings.app_secret if settings.using_app_secret else None
+            )
+            self._cluster = settings.cluster
+            self._timeout = settings.timeout
+            self._env = settings.env
+            self._cycle_time = settings.cycle_time
+            self._cache_file_dir_path = settings.cache_file_dir_path
+            self.ip = self._get_local_ip_address(settings.ip)
+            self._notification_map = {
+                namespace: -1 for namespace in settings.namespaces
+            }
+        else:
+            # Use direct parameters
+            self._meta_server_address = meta_server_address
+            self._app_id = app_id
+            self._app_secret = app_secret
+            self._cluster = cluster
+            self._timeout = timeout
+            self._env = env
+            self._cycle_time = cycle_time
+            self._cache_file_dir_path = cache_file_dir_path
+            self.ip = self._get_local_ip_address(ip)
+            self._notification_map = {namespace: -1 for namespace in namespaces}
+
+        # Initialize other attributes
         self._cache: Dict = {}
-        self._notification_map = {namespace: -1 for namespace in namespaces}
-        self._cycle_time = cycle_time
         self._hash: Dict = {}
         self._config_server_url = None
         self._config_server_host = None
         self._config_server_port = None
-        self._cache_file_dir_path = None
-        self.ip = self._get_local_ip_address(ip)
+
+        # Initialize cache directory path
+        self._init_cache_file_dir_path(self._cache_file_dir_path)
+
+        # Start client
         self.update_config_server()
-        self._init_cache_file_dir_path(cache_file_dir_path)
         self.fetch_configuration()
         self.start_polling_thread()
 
@@ -123,8 +181,9 @@ class ApolloClient(ConfigClientInterface):
         else:
             self._cache_file_dir_path = cache_file_dir_path
 
+        # Ensure the cache directory exists
         if not os.path.isdir(self._cache_file_dir_path):
-            os.mkdir(self._cache_file_dir_path)
+            os.makedirs(self._cache_file_dir_path, exist_ok=True)
 
     @staticmethod
     def _sign_string(string_to_sign: str, secret: str) -> str:
@@ -321,16 +380,26 @@ class ApolloClient(ConfigClientInterface):
         Load local cache file to memory
         """
 
-        for file_name in os.listdir(self._cache_file_dir_path):
-            file_path = os.path.join(self._cache_file_dir_path, file_name)
-            if os.path.isfile(file_path):
-                file_simple_name, file_ext_name = os.path.splitext(file_name)
-                if file_ext_name == ".swp":
-                    continue
-                namespace = file_simple_name.split("_")[-1]
-                with open(file_path) as f:
-                    self._cache[namespace] = json.loads(f.read())["configurations"]
-        return True
+        try:
+            for file_name in os.listdir(self._cache_file_dir_path):
+                file_path = os.path.join(self._cache_file_dir_path, file_name)
+                if os.path.isfile(file_path):
+                    file_simple_name, file_ext_name = os.path.splitext(file_name)
+                    if file_ext_name == ".swp":
+                        continue
+                    if not file_simple_name.startswith(
+                        f"{self._app_id}_configuration_"
+                    ):
+                        continue
+
+                    namespace = file_simple_name.split("_")[-1]
+                    with open(file_path) as f:
+                        data = json.loads(f.read())
+                        self.update_cache(namespace, data)
+            return True
+        except Exception as e:
+            logger.error(f"Error loading local cache files: {e}")
+            return False
 
     def get_service_conf(self) -> List:
         """
@@ -368,6 +437,8 @@ class ApolloClient(ConfigClientInterface):
             f"Update config server url to: {self._config_server_url}, host: {self._config_server_host}, port: {self._config_server_port}"
         )
 
+        return self._config_server_url
+
     def get_value(
         self, key: str, default_val: str = None, namespace: str = "application"
     ) -> Any:
@@ -383,7 +454,9 @@ class ApolloClient(ConfigClientInterface):
             logger.error(f"Get key({key}) value failed, error: {e}")
             return default_val
 
-    def get_json_value(self, key: str, namespace: str = "application") -> Any:
+    def get_json_value(
+        self, key: str, namespace: str = "application", default_val: Dict = None
+    ) -> Any:
         """
         Get the configuration value and convert it to json format
         """
@@ -391,6 +464,7 @@ class ApolloClient(ConfigClientInterface):
         val = self.get_value(key, namespace=namespace)
         try:
             return json.loads(val)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             logger.error(f"The value of key({key}) is not json format")
-        return {}
+
+        return default_val

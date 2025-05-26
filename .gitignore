@@ -175,3 +175,5 @@ cython_debug/
 
 # pyapollo
 pyapollo/config
+test.env
+*_configuration_application.txt
