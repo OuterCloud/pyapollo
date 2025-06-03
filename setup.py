@@ -6,7 +6,7 @@ setup(
     author="lantianyou",
     author_email="434209210@qq.com",
     description="Apollo client with async support and pydantic integration, tested on python 3.13",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding='utf-8').read(),
     long_description_content_type="text/markdown",
     url="https://github.com/OuterCloud/pyapollo",
     packages=find_packages(),
