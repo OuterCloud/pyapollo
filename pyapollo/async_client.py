@@ -25,7 +25,6 @@ import socket
 import base64
 import hashlib
 import asyncio
-import sys
 from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional
 
