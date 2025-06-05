@@ -455,7 +455,7 @@ class ApolloClient(ConfigClientInterface):
             return default_val
 
     def get_json_value(
-        self, key: str, namespace: str = "application", default_val: Dict = None
+        self, key: str, default_val: Dict = None, namespace: str = "application"
     ) -> Any:
         """
         Get the configuration value and convert it to json format
