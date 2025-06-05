@@ -26,7 +26,7 @@ import base64
 import hashlib
 import asyncio
 from urllib.parse import urlparse
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
 import aiofiles
@@ -566,16 +566,21 @@ class AsyncApolloClient(AsyncConfigClientInterface):
             logger.error(f"Get key({key}) value failed, error: {e}")
             return default_val
 
-    async def get_json_value(self, key: str, namespace: str = "application") -> Any:
+    async def get_json_value(
+        self,
+        key: str,
+        default_val: Union[dict, None] = None,
+        namespace: str = "application",
+    ) -> Any:
         """
         Get the configuration value and convert it to json format
         """
         val = await self.get_value(key, namespace=namespace)
         if val is None:
-            return {}
+            return default_val or {}
 
         try:
             return json.loads(val)
         except (json.JSONDecodeError, TypeError):
             logger.error(f"The value of key({key}) is not json format")
-            return {}
+            return default_val or {}

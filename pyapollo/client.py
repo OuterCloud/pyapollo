@@ -27,7 +27,7 @@ import base64
 import hashlib
 import threading
 from urllib.parse import urlparse
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import requests
 from loguru import logger
@@ -455,7 +455,10 @@ class ApolloClient(ConfigClientInterface):
             return default_val
 
     def get_json_value(
-        self, key: str, default_val: Dict = None, namespace: str = "application"
+        self,
+        key: str,
+        default_val: Union[dict, None] = None,
+        namespace: str = "application",
     ) -> Any:
         """
         Get the configuration value and convert it to json format
@@ -467,4 +470,4 @@ class ApolloClient(ConfigClientInterface):
         except (json.JSONDecodeError, TypeError):
             logger.error(f"The value of key({key}) is not json format")
 
-        return default_val
+        return default_val or {}
