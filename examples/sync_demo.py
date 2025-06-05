@@ -76,6 +76,7 @@ def main():
     parser.add_argument("--env", default="DEV", help="Environment (default: DEV)")
     parser.add_argument(
         "--namespaces",
+        default="application",
         help="Comma-separated list of namespaces (default: application)",
     )
 
@@ -102,7 +103,9 @@ def main():
             app_secret=args.secret or os.getenv("APOLLO_APP_SECRET"),
             cluster=args.cluster,
             env=args.env,
-            namespaces=args.namespaces.split(",") if args.namespaces else None,
+            namespaces=args.namespaces.split(",")
+            if args.namespaces
+            else ["application"],
         )
         client = ApolloClient(settings=settings)
     else:
@@ -119,7 +122,9 @@ def main():
             app_secret=args.secret,
             cluster=args.cluster,
             env=args.env,
-            namespaces=args.namespaces.split(",") if args.namespaces else None,
+            namespaces=args.namespaces.split(",")
+            if args.namespaces
+            else ["application"],
         )
 
     # Fetch and print value
