@@ -430,6 +430,11 @@ class ApolloClient(ConfigClientInterface):
         self._config_server_host = f"{remote[0]}:{remote[1]}"
         if len(remote) == 1:
             self._config_server_port = 8090
+        elif len(remote) == 2:
+            if "https" in remote[0]:
+                self._config_server_port = 443
+            else:
+                self._config_server_port = 80
         else:
             self._config_server_port = int(remote[2].rstrip("/"))
 
